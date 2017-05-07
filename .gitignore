@@ -27,3 +27,9 @@
 *.exe
 *.out
 *.app
+
+cmake-build-debug/
+roms/
+CMakeLists.txt
+.idea
+.DS_Store
