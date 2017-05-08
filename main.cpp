@@ -10,6 +10,9 @@ RAM* memory = nullptr;
 void emulationLoop();
 char decodeOpcode(short opcode, char*& decoded);
 
+int hex2dec(char* hex, int size);
+int hex2decDigit(char hex);
+
 int main(int argc, char* argv[]) {
 
     if (argc != 2) {
@@ -30,6 +33,7 @@ int main(int argc, char* argv[]) {
 void emulationLoop() {
     short programCounter = 512;
     short opcode = 0;
+    char vRegisters[16];
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wmissing-noreturn"
@@ -37,7 +41,26 @@ void emulationLoop() {
         opcode = memory->getOpcode(programCounter);
         char* decoded;
 
+        /**
+         *  NNN: address
+            NN: 8-bit constant
+            N: 4-bit constant
+            X and Y: 4-bit register identifier
+            I : 16bit register (For memory address) (Similar to void pointer)
+         */
+
+        char x, y;
+        char*nn = new char[2];
+
         switch (decodeOpcode(opcode, decoded)) {
+            case 8:
+                //6XNN
+                //Sets VX to NN.
+                x = (char) hex2decDigit(decoded[1]);
+                nn[0] = decoded[2];
+                nn[1] = decoded[3];
+                vRegisters[x] = (char) hex2dec(nn, 2);
+                break;
             default:
                 cerr << "Unimplemented opcode: " << decoded << endl;
                 return;
@@ -63,8 +86,8 @@ char decodeOpcode(short opcode, char*& decoded) {
     decoded = d;
 
     //https://en.wikipedia.org/wiki/CHIP-8#Opcode_table
-    if (decoded == "00E0") return 1;
-    if (decoded == "00EE") return 2;
+    if (strcmp(decoded, "00E0") == 0) return 1;
+    if (strcmp(decoded, "00EE") == 0) return 2;
     if (decoded[0] == '0') return 0;
     if (decoded[0] == '1') return 3;
     if (decoded[0] == '2') return 4;
@@ -107,5 +130,41 @@ char decodeOpcode(short opcode, char*& decoded) {
         if (decoded[3] == '3') return 32;
     }
 
+    return -1; //error state
+}
 
+
+int hex2dec(char* hex, int size) {
+    if (size == 1) {
+        return hex2decDigit(hex[0]);
+    } else if (size == 2) {
+        int digit1 = hex2decDigit(hex[0]);
+        int digit2 = hex2decDigit(hex[1]);
+
+        return (digit1 * 16) + digit2;
+    }
+}
+
+int hex2decDigit(char hex) {
+    switch (hex) {
+        case '0' : return 0;
+        case '1' : return 1;
+        case '2' : return 2;
+        case '3' : return 3;
+        case '4' : return 4;
+        case '5' : return 5;
+        case '6' : return 6;
+        case '7' : return 7;
+        case '8' : return 8;
+        case '9' : return 9;
+        case 'A' : return 10;
+        case 'B' : return 11;
+        case 'C' : return 12;
+        case 'D' : return 13;
+        case 'E' : return 14;
+        case 'F' : return 15;
+        default:
+            cerr << "Invalid hex digit" << endl;
+            exit(1);
+    }
 }
