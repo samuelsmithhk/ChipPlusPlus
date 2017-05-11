@@ -1,87 +1,44 @@
 #include <iostream>
 
 #include "ROM.h"
-#include "RAM.h"
 
 using namespace std;
 
-RAM* memory = nullptr;
+unsigned char memory[4096];
+unsigned short programCounter = 512;
+unsigned short stack[16];
+unsigned short stackPointer = 0;
+unsigned char vRegisters[15];
+bool vFlag = false;
+unsigned short iRegister = 0;
+bool display[64][32];
+bool draw = false;
 
-void emulationLoop();
-char decodeOpcode(short opcode, char*& decoded);
-
-int hex2dec(char* hex, int size);
-int hex2decDigit(char hex);
-
-int main(int argc, char* argv[]) {
-
-    if (argc != 2) {
-        cerr << "Incorrect program usage. Correct usage: chippp <rom path>" << endl;
+void loadROMIntoMemory(ROM* rom) {
+    for (int i = 512; i < 3744; i++) {
+        memory[i] = rom->nextByte();
     }
-
-    string romPath = argv[1];
-    ROM* gameROM = new ROM(romPath);
-    gameROM->loadFile();
-    memory = new RAM;
-    memory->loadROMIntoMemory(gameROM);
-
-    emulationLoop();
-
-    return 0;
 }
 
-void emulationLoop() {
-    short programCounter = 512;
-    short opcode = 0;
-    char vRegisters[16];
-
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wmissing-noreturn"
-    for (;;) {
-        opcode = memory->getOpcode(programCounter);
-        char* decoded;
-
-        /**
-         *  NNN: address
-            NN: 8-bit constant
-            N: 4-bit constant
-            X and Y: 4-bit register identifier
-            I : 16bit register (For memory address) (Similar to void pointer)
-         */
-
-        char x, y;
-        char*nn = new char[2];
-
-        switch (decodeOpcode(opcode, decoded)) {
-            case 8:
-                //6XNN
-                //Sets VX to NN.
-                x = (char) hex2decDigit(decoded[1]);
-                nn[0] = decoded[2];
-                nn[1] = decoded[3];
-                vRegisters[x] = (char) hex2dec(nn, 2);
-                break;
-            default:
-                cerr << "Unimplemented opcode: " << decoded << endl;
-                return;
-        }
-
-        programCounter += 2;
-    }
-#pragma clang diagnostic pop
+unsigned short getInstruction(int memoryPosition) {
+    unsigned char op1 = memory[memoryPosition];
+    unsigned char op2 = memory[memoryPosition + 1];
+    unsigned short instruction = op1 << 8; //take 1 byte char, and add 8 bits to the right
+    instruction |= op2; //use bitwise or to merge op2 into the right hand side of the opcode
+    return instruction;
 }
 
-char decodeOpcode(short opcode, char*& decoded) {
+char decodeInstruction(unsigned short instruction, char*& decoded) {
     char digits[] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'};
     char* d = new char[4];
 
-    d[3] = digits[opcode % 16];
-    opcode /= 16;
-    d[2] = digits[opcode % 16];
-    opcode /= 16;
-    d[1] = digits[opcode % 16];
-    opcode /= 16;
-    d[0] = digits[opcode];
+    d[3] = digits[instruction % 16];
+    instruction /= 16;
+    d[2] = digits[instruction % 16];
+    instruction /= 16;
+    d[1] = digits[instruction % 16];
+    instruction /= 16;
+    d[0] = digits[instruction];
 
     decoded = d;
 
@@ -133,18 +90,6 @@ char decodeOpcode(short opcode, char*& decoded) {
     return -1; //error state
 }
 
-
-int hex2dec(char* hex, int size) {
-    if (size == 1) {
-        return hex2decDigit(hex[0]);
-    } else if (size == 2) {
-        int digit1 = hex2decDigit(hex[0]);
-        int digit2 = hex2decDigit(hex[1]);
-
-        return (digit1 * 16) + digit2;
-    }
-}
-
 int hex2decDigit(char hex) {
     switch (hex) {
         case '0' : return 0;
@@ -166,5 +111,172 @@ int hex2decDigit(char hex) {
         default:
             cerr << "Invalid hex digit" << endl;
             exit(1);
+    }
+}
+
+int hex2dec(char* hex, int size) {
+    if (size == 1) {
+        return hex2decDigit(hex[0]);
+    } else if (size == 2) {
+        int digit1 = hex2decDigit(hex[0]);
+        int digit2 = hex2decDigit(hex[1]);
+
+        return (digit1 * 16) + digit2;
+    } else if (size == 3) {
+        int digit1 = hex2decDigit(hex[0]);
+        int digit2 = hex2decDigit(hex[1]);
+        int digit3 = hex2decDigit(hex[2]);
+
+        return (digit1 * 256) + (digit2 * 16) + digit3;
+    }
+    return -1;
+}
+
+bool loadSpriteIntoDisplay(int x, int y, int n) {
+    bool unset = false;
+    int pixelCount = 8 * n;
+    bool sprite[pixelCount];
+    int pixelIndex = 0;
+
+    for (unsigned short i = 0; i < n; i ++) {
+        unsigned short payloadAddress = iRegister + i;
+        unsigned char payload = memory[payloadAddress];
+
+        for (int j = 7; j >= 0; j--) {
+            sprite[pixelIndex + j] = (payload % 2 == 1);
+            payload /= 2;
+        }
+        pixelIndex += 8;
+    }
+
+    pixelIndex = 0;
+    for (int i = 0; i < 8; i++) {
+        for (int j = 0; j < n; j++) {
+            bool displayBit = display[x + i][y + j];
+            bool spriteBit = sprite[pixelIndex];
+
+            if (displayBit == spriteBit) {
+                unset = true;
+                displayBit = false;
+            } else if (spriteBit) {
+                unset = true;
+                displayBit = true;
+            } else {
+                displayBit = true;
+            }
+            display[x + i][y + j] = displayBit;
+            pixelIndex += 1;
+        }
+    }
+
+    return unset;
+}
+
+void drawDisplay() {
+    //temporary, will move to opengl later
+    for (int i = 0; i < 100; i++) {
+        cout << endl;
+    }
+
+    for (int i = 0; i < 32; i++) {
+        for (int j = 0; j < 64; j++) {
+            cout << (display[j][i] ? "\u25A0" : " ");
+            cout << (display[j][i] ? "\u25A0" : " ");
+        }
+        cout << endl;
+    }
+}
+
+int nextInstruction() {
+    unsigned short currentInstruction = getInstruction(programCounter);
+    char *decoded;
+
+    /**
+        NNN: address
+        NN: 8-bit constant
+        N: 4-bit constant
+        X and Y: 4-bit register identifier
+        I : 16bit register (For memory address) (Similar to void pointer)
+    */
+
+    char x, y, n;
+    char *nn = new char[2];
+    char *nnn = new char[3];
+
+    switch (decodeInstruction(currentInstruction, decoded)) {
+        case 4:
+            //2NNN
+            //Calls subroutine at NNN.
+            nnn[0] = decoded[1];
+            nnn[1] = decoded[2];
+            nnn[2] = decoded[3];
+            stack[stackPointer] = programCounter;
+            stackPointer++;
+            programCounter = (unsigned short) hex2dec(nnn, 3);
+            break;
+        case 8:
+            //6XNN
+            //Sets VX to NN.
+            x = (char) hex2decDigit(decoded[1]);
+            nn[0] = decoded[2];
+            nn[1] = decoded[3];
+            vRegisters[x] = (unsigned char) hex2dec(nn, 2);
+            programCounter += 2;
+            break;
+        case 20:
+            //ANNN
+            //Sets I to NNN
+            nnn[0] = decoded[1];
+            nnn[1] = decoded[2];
+            nnn[2] = decoded[3];
+            iRegister = (unsigned short) hex2dec(nnn, 3);
+            programCounter += 2;
+            break;
+        case 23:
+            //DXYN
+            //Draws a sprite
+            //Co-ordinates X and Y
+            //Width 8 pixels
+            //Height N pixels
+            //reading of pixel values starts at iRegister, bit encoded
+            //if a pixel that was set before this instruction is unset, set vf to 1
+            //if no pixels get unset, set vf to 0
+            x = (char) hex2decDigit(decoded[1]);
+            y = (char) hex2decDigit(decoded[2]);
+            n = (char) hex2decDigit(decoded[3]);
+
+            vFlag = loadSpriteIntoDisplay(x, y, n);
+            draw = true;
+            programCounter += 2;
+            break;
+        default:
+            cerr << "Unimplemented opcode: " << decoded << endl;
+            return 1;
+    }
+
+    return 0;
+}
+
+int main(int argc, char* argv[]) {
+
+    if (argc != 2) {
+        cerr << "Incorrect program usage. Correct usage: chippp <rom path>" << endl;
+    }
+
+    string romPath = argv[1];
+    ROM* gameROM = new ROM(romPath);
+    gameROM->loadFile();
+    loadROMIntoMemory(gameROM);
+
+    for (;;) {
+        if (nextInstruction() == 1) {
+            cerr << "Execution failed for some reason";
+            return 1;
+        }
+
+        if (draw) {
+            drawDisplay();
+            draw = false;
+        }
     }
 }

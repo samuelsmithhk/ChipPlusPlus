@@ -15,7 +15,7 @@ private:
 public:
     ROM(std::string _romFilePath);
     void loadFile();
-    char nextByte();
+    unsigned char nextByte();
 };
 
 

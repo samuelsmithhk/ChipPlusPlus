@@ -17,8 +17,8 @@ void ROM::loadFile() {
     romFile.close();
 }
 
-char ROM::nextByte() {
-    char toReturn = buffer[bytePosition];
+unsigned char ROM::nextByte() {
+    unsigned char toReturn = (unsigned char) buffer[bytePosition];
     bytePosition++;
     return toReturn;
 }
