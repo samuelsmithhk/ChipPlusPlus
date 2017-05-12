@@ -232,38 +232,31 @@ int hex2dec(char* hex, int size) {
 
 bool loadSpriteIntoDisplay(int x, int y, int n) {
     bool unset = false;
-    int pixelCount = 8 * n;
-    bool sprite[pixelCount];
-    int pixelIndex = 0;
+    bool sprite[8][n];
 
-    for (unsigned short i = 0; i < n; i ++) {
+    for (unsigned short i = 0; i < n; i++) {
         unsigned short payloadAddress = iRegister + i;
         unsigned char payload = memory[payloadAddress];
 
         for (int j = 7; j >= 0; j--) {
-            sprite[pixelIndex + j] = (payload % 2 == 1);
+            sprite[j][i] = (payload % 2 == 1);
             payload /= 2;
         }
-        pixelIndex += 8;
     }
 
-    pixelIndex = 0;
-    for (int i = 0; i < 8; i++) {
-        for (int j = 0; j < n; j++) {
-            bool displayBit = display[x + i][y + j];
-            bool spriteBit = sprite[pixelIndex];
+    for (int line = 0; line < n; line++) {
+        int addressY = y + line;
+        for (int bit = 0; bit < 8; bit++) {
+            int addressX = x + bit;
+            bool displayBit = display[addressX][addressY];
+            bool spriteBit = sprite[bit][line];
 
-            if (displayBit == spriteBit) {
+            if (displayBit && spriteBit) {
                 unset = true;
-                displayBit = false;
-            } else if (spriteBit) {
-                unset = true;
-                displayBit = true;
-            } else {
-                displayBit = true;
             }
-            display[x + i][y + j] = displayBit;
-            pixelIndex += 1;
+
+            displayBit = displayBit != spriteBit;
+            display[addressX][addressY] = displayBit;
         }
     }
 
@@ -276,13 +269,21 @@ void drawDisplay() {
         cout << endl;
     }
 
-    for (int i = 0; i < 32; i++) {
+    for (int y = 0; y < 32; y++) {
+        for (int x = 0; x < 64; x++) {
+            cout << (display[x][y] ? "\u2588\u2588" : "  ");
+
+        }
+        cout << endl;
+    }
+
+    /*for (int i = 0; i < 32; i++) {
         for (int j = 0; j < 64; j++) {
             cout << (display[j][i] ? "\u25A0" : " ");
             cout << (display[j][i] ? "\u25A0" : " ");
         }
         cout << endl;
-    }
+    }*/
 }
 
 int nextInstruction() {
@@ -303,6 +304,13 @@ int nextInstruction() {
     unsigned short temp;
 
     switch (decodeInstruction(currentInstruction, decoded)) {
+        case 2:
+            //OOEE
+            //Returns from subroutine
+            stackPointer--;
+            programCounter = stack[stackPointer];
+            programCounter += 2;
+            break;
         case 4:
             //2NNN
             //Calls subroutine at NNN.
@@ -320,6 +328,15 @@ int nextInstruction() {
             nn[0] = decoded[2];
             nn[1] = decoded[3];
             vRegisters[x] = (unsigned char) hex2dec(nn, 2);
+            programCounter += 2;
+            break;
+        case 9:
+            //7XNN
+            //Adds NN to V(X)
+            x = (char) hex2decDigit(decoded[1]);
+            nn[0] = decoded[2];
+            nn[1] = decoded[3];
+            vRegisters[x] += (unsigned char) hex2dec(nn, 2);
             programCounter += 2;
             break;
         case 20:
@@ -354,11 +371,13 @@ int nextInstruction() {
             x = (char) hex2decDigit(decoded[1]);
             temp = 80;
 
-            for (int c = 0; c < vRegisters[x]; c++) {
+            for (int c = 0; c <= vRegisters[x]; c++) {
                 temp += 5;
             }
 
             iRegister = temp;
+            programCounter += 2;
+            break;
         case 32:
             //FX33
             //Get the number in V(X).
@@ -407,7 +426,6 @@ int main(int argc, char* argv[]) {
 
     for (;;) {
         if (nextInstruction() == 1) {
-            cerr << "Execution failed for some reason";
             return 1;
         }
 
