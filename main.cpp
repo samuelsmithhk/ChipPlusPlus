@@ -20,6 +20,104 @@ void loadROMIntoMemory(ROM* rom) {
     }
 }
 
+void loadFontSetIntoMemory() {
+    memory[80] = 240;   //1111  ****
+    memory[81] = 144;   //1001  *  *
+    memory[82] = 144;   //1001  *  *
+    memory[83] = 144;   //1001  *  *
+    memory[84] = 240;   //1111  ****
+
+    memory[85] = 32;    //0010    *
+    memory[86] = 96;    //0110   **
+    memory[87] = 32;    //0010    *
+    memory[88] = 32;    //0010    *
+    memory[89] = 112;   //0111   ***
+
+    memory[90] = 240;   //1111  ****
+    memory[91] = 16;    //0001     *
+    memory[92] = 240;   //1111  ****
+    memory[93] = 128;   //1000  *
+    memory[94] = 240;   //1111  ****
+
+    memory[95] = 240;   //1111  ****
+    memory[96] = 16;    //0001     *
+    memory[97] = 240;   //1111  ****
+    memory[98] = 16;    //0001     *
+    memory[99] = 240;   //1111  ****
+
+    memory[100] = 144;  //1001  *  *
+    memory[101] = 144;  //1001  *  *
+    memory[102] = 240;  //1111  ****
+    memory[103] = 16;   //0001     *
+    memory[104] = 16;   //0001     *
+
+    memory[105] = 240;  //1111  ****
+    memory[106] = 128;  //1000  *
+    memory[107] = 240;  //1111  ****
+    memory[108] = 16;   //0001     *
+    memory[109] = 240;  //1111  ****
+
+    memory[110] = 240;  //1111  ****
+    memory[111] = 128;  //1000  *
+    memory[112] = 240;  //1111  ****
+    memory[113] = 144;  //1001  *  *
+    memory[114] = 240;  //1111  ****
+
+    memory[115] = 240;  //1111  ****
+    memory[116] = 16;   //0001     *
+    memory[117] = 32;   //0010    *
+    memory[118] = 65;   //0100   *
+    memory[119] = 65;   //0100   *
+
+    memory[120] = 240;  //1111  ****
+    memory[121] = 144;  //1001  *  *
+    memory[122] = 240;  //1111  ****
+    memory[123] = 144;  //1001  *  *
+    memory[124] = 240;  //1111  ****
+
+    memory[125] = 240;  //1111  ****
+    memory[126] = 144;  //1001  *  *
+    memory[127] = 240;  //1111  ****
+    memory[128] = 16;   //0001     *
+    memory[129] = 16;   //0001     *
+
+    memory[130] = 240;  //1111  ****
+    memory[131] = 144;  //1001  *  *
+    memory[132] = 240;  //1111  ****
+    memory[133] = 144;  //1001  *  *
+    memory[134] = 144;  //1001  *  *
+
+    memory[135] = 224;  //1110  ***
+    memory[136] = 144;  //1001  *  *
+    memory[137] = 224;  //1110  ***
+    memory[138] = 144;  //1001  *  *
+    memory[139] = 224;  //1110  ***
+
+    memory[140] = 240;  //1111  ****
+    memory[141] = 128;  //1000  *
+    memory[142] = 128;  //1000  *
+    memory[143] = 128;  //1000  *
+    memory[144] = 240;  //1111  ****
+
+    memory[145] = 224;  //1110  ***
+    memory[146] = 144;  //1001  *  *
+    memory[147] = 144;  //1001  *  *
+    memory[148] = 144;  //1001  *  *
+    memory[149] = 224;  //1119  ***
+
+    memory[150] = 240;  //1111  ****
+    memory[151] = 128;  //1000  *
+    memory[152] = 240;  //1111  ****
+    memory[153] = 128;  //1000  *
+    memory[154] = 240;  //1111  ****
+
+    memory[155] = 240;  //1111  ****
+    memory[156] = 128;  //1000  *
+    memory[157] = 240;  //1111  ****
+    memory[158] = 128;  //1000  *
+    memory[159] = 128;  //1000  *
+}
+
 unsigned short getInstruction(int memoryPosition) {
     unsigned char op1 = memory[memoryPosition];
     unsigned char op2 = memory[memoryPosition + 1];
@@ -202,6 +300,7 @@ int nextInstruction() {
     char x, y, n;
     char *nn = new char[2];
     char *nnn = new char[3];
+    unsigned short temp;
 
     switch (decodeInstruction(currentInstruction, decoded)) {
         case 4:
@@ -249,6 +348,43 @@ int nextInstruction() {
             draw = true;
             programCounter += 2;
             break;
+        case 31:
+            //FX29
+            //Sets I to the location of the font-character of the character stored in V(X)
+            x = (char) hex2decDigit(decoded[1]);
+            temp = 80;
+
+            for (int c = 0; c < vRegisters[x]; c++) {
+                temp += 5;
+            }
+
+            iRegister = temp;
+        case 32:
+            //FX33
+            //Get the number in V(X).
+            //Store the hundreds digit at address I
+            //Store the tens digit at address I + 1
+            //Store the unit digit at address I + 2
+            x = (char) hex2decDigit(decoded[1]);
+            temp = vRegisters[x];
+            memory[iRegister + 2] = (unsigned char) (temp % 10);
+            temp /= 10;
+            memory[iRegister + 1] = (unsigned char) (temp % 10);
+            temp /= 10;
+            memory[iRegister] = (unsigned char) (temp % 10);
+            programCounter += 2;
+            break;
+        case 34:
+            //FX65
+            //Stores from V(0) to V(X) in memory starting at address I
+            x = (char) hex2decDigit(decoded[1]);
+
+            for (char i = 0; i <= x; i++) {
+                memory[iRegister + i] = vRegisters[i];
+            }
+
+            programCounter += 2;
+            break;
         default:
             cerr << "Unimplemented opcode: " << decoded << endl;
             return 1;
@@ -267,6 +403,7 @@ int main(int argc, char* argv[]) {
     ROM* gameROM = new ROM(romPath);
     gameROM->loadFile();
     loadROMIntoMemory(gameROM);
+    loadFontSetIntoMemory();
 
     for (;;) {
         if (nextInstruction() == 1) {
