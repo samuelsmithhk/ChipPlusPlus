@@ -1,4 +1,5 @@
 #include <iostream>
+#include <chrono>
 
 #include "ROM.h"
 
@@ -13,6 +14,7 @@ bool vFlag = false;
 unsigned short iRegister = 0;
 bool display[64][32];
 bool draw = false;
+unsigned char delayTimer = 0;
 
 void loadROMIntoMemory(ROM* rom) {
     for (int i = 512; i < 3744; i++) {
@@ -277,13 +279,6 @@ void drawDisplay() {
         cout << endl;
     }
 
-    /*for (int i = 0; i < 32; i++) {
-        for (int j = 0; j < 64; j++) {
-            cout << (display[j][i] ? "\u25A0" : " ");
-            cout << (display[j][i] ? "\u25A0" : " ");
-        }
-        cout << endl;
-    }*/
 }
 
 int nextInstruction() {
@@ -320,6 +315,19 @@ int nextInstruction() {
             stack[stackPointer] = programCounter;
             stackPointer++;
             programCounter = (unsigned short) hex2dec(nnn, 3);
+            break;
+        case 5:
+            //3XNN
+            //Skips next instruction if V(X) is equal to NN
+            x = (unsigned char) hex2decDigit(decoded[1]);
+            nn[0] = decoded[2];
+            nn[1] = decoded[3];
+
+            if (x == (unsigned char) hex2dec(nn, 2)) {
+                programCounter += 2;
+            }
+
+            programCounter += 2;
             break;
         case 8:
             //6XNN
@@ -365,6 +373,20 @@ int nextInstruction() {
             draw = true;
             programCounter += 2;
             break;
+        case 26:
+            //FX07
+            //Sets V(X) to the value of the delay timer
+            x = (char) hex2decDigit(decoded[1]);
+            vRegisters[x] = delayTimer;
+            programCounter += 2;
+            break;
+        case 28:
+            //FX15
+            //Sets the delay timer to V(X)
+            x = (char) hex2decDigit(decoded[1]);
+            delayTimer = vRegisters[x];
+            programCounter += 2;
+            break;
         case 31:
             //FX29
             //Sets I to the location of the font-character of the character stored in V(X)
@@ -397,7 +419,6 @@ int nextInstruction() {
             //FX65
             //Stores from V(0) to V(X) in memory starting at address I
             x = (char) hex2decDigit(decoded[1]);
-
             for (char i = 0; i <= x; i++) {
                 memory[iRegister + i] = vRegisters[i];
             }
@@ -424,6 +445,9 @@ int main(int argc, char* argv[]) {
     loadROMIntoMemory(gameROM);
     loadFontSetIntoMemory();
 
+    chrono::high_resolution_clock::time_point timestamp1, timestamp2; //for timers
+    double timeSinceDelayTick = 0.0;
+
     for (;;) {
         if (nextInstruction() == 1) {
             return 1;
@@ -432,6 +456,18 @@ int main(int argc, char* argv[]) {
         if (draw) {
             drawDisplay();
             draw = false;
+        }
+
+        timestamp2 = timestamp1;
+        timestamp1 = chrono::high_resolution_clock::now();
+
+        if (delayTimer > 0) {
+            chrono::duration<double, milli> time = timestamp1 - timestamp2;
+            timeSinceDelayTick += time.count();
+            if (timeSinceDelayTick >= 16.667) {
+                delayTimer -= 1;
+                timeSinceDelayTick = 0.0;
+            }
         }
     }
 }
