@@ -14,10 +14,10 @@ unsigned char memory[4096];
 unsigned short programCounter = 512;
 unsigned short stack[16];
 unsigned short stackPointer = 0;
-unsigned char vRegisters[15];
-bool vFlag = false;
+unsigned char vRegisters[16];
 unsigned short iRegister = 0;
 bool display[64][32];
+bool keyboard[16];
 unsigned char delayTimer = 0;
 
 chrono::high_resolution_clock::time_point timestamp1, timestamp2; //for timers
@@ -272,6 +272,49 @@ bool loadSpriteIntoDisplay(int x, int y, int n) {
     return unset;
 }
 
+void processKey(unsigned char key, int x, int y, bool down) {
+    if (key < 58) {
+        keyboard[key - 48] = down;
+    } else {
+        switch (key) {
+            case 97:
+            case 65:
+                keyboard[10] = down;
+                break;
+            case 98:
+            case 66:
+                keyboard[11] = down;
+                break;
+            case 99:
+            case 67:
+                keyboard[12] = down;
+                break;
+            case 100:
+            case 68:
+                keyboard[13] = down;
+                break;
+            case 101:
+            case 69:
+                keyboard[14] = down;
+                break;
+            case 102:
+            case 70:
+                keyboard[15] = down;
+                break;
+            default:
+                break;
+        }
+    }
+}
+
+void processKeyDown(unsigned char key, int x, int y) {
+    processKey(key, x, y, true);
+}
+
+void processKeyUp(unsigned char key, int x, int y) {
+    processKey(key, x, y, false);
+}
+
 void drawDisplay() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -313,7 +356,7 @@ int nextInstruction() {
         I : 16bit register (For memory address) (Similar to void pointer)
     */
 
-    char x, y, n;
+    unsigned char x, y, n;
     char *nn = new char[2];
     char *nnn = new char[3];
     unsigned short temp;
@@ -352,7 +395,7 @@ int nextInstruction() {
         case 8:
             //6XNN
             //Sets VX to NN.
-            x = (char) hex2decDigit(decoded[1]);
+            x = (unsigned char) hex2decDigit(decoded[1]);
             nn[0] = decoded[2];
             nn[1] = decoded[3];
             vRegisters[x] = (unsigned char) hex2dec(nn, 2);
@@ -361,10 +404,35 @@ int nextInstruction() {
         case 9:
             //7XNN
             //Adds NN to V(X)
-            x = (char) hex2decDigit(decoded[1]);
+            x = (unsigned char) hex2decDigit(decoded[1]);
             nn[0] = decoded[2];
             nn[1] = decoded[3];
             vRegisters[x] += (unsigned char) hex2dec(nn, 2);
+            programCounter += 2;
+            break;
+        case 12:
+            //8XY2
+            //Set X to v[X] & v[Y]
+            x = (unsigned char) hex2decDigit(decoded[1]);
+            y = (unsigned char) hex2decDigit(decoded[2]);
+            vRegisters[x] = vRegisters[x] & vRegisters[y];
+            programCounter += 2;
+            break;
+        case 14:
+            //8XY4
+            //Add V(Y) to V(X), if result greater than 255, subtract 255 and set v[15] to 1 (0 if not)
+            x = (unsigned char) hex2decDigit(decoded[1]);
+            y = (unsigned char) hex2decDigit(decoded[2]);
+            temp = vRegisters[x] + vRegisters[y];
+
+            if (temp > 255) {
+                temp -= 255;
+                vRegisters[15] = 1;
+            } else {
+                vRegisters[15] = 0;
+            }
+
+            vRegisters[x] = (unsigned char) temp;
             programCounter += 2;
             break;
         case 20:
@@ -379,7 +447,7 @@ int nextInstruction() {
         case 22:
             //CXNN
             //Sets V(X) to the result of a bitwise AND operation between NN and a random number between 0 and 255
-            x = (char) hex2decDigit(decoded[1]);
+            x = (unsigned char) hex2decDigit(decoded[1]);
             nn[0] = decoded[2];
             nn[1] = decoded[3];
 
@@ -396,11 +464,21 @@ int nextInstruction() {
             //reading of pixel values starts at iRegister, bit encoded
             //if a pixel that was set before this instruction is unset, set vf to 1
             //if no pixels get unset, set vf to 0
-            x = (char) hex2decDigit(decoded[1]);
-            y = (char) hex2decDigit(decoded[2]);
-            n = (char) hex2decDigit(decoded[3]);
+            x = (unsigned char) hex2decDigit(decoded[1]);
+            y = (unsigned char) hex2decDigit(decoded[2]);
+            n = (unsigned char) hex2decDigit(decoded[3]);
 
-            vFlag = loadSpriteIntoDisplay(x, y, n);
+            vRegisters[15] = (unsigned char) (loadSpriteIntoDisplay(x, y, n) ? 1 : 0);
+            programCounter += 2;
+            break;
+        case 25:
+            //EXA1
+            //Skip next instruction if key stored in V(X) is not pressed
+            x = (unsigned char) hex2decDigit(decoded[1]);
+            temp = vRegisters[x];
+            if (!keyboard[temp]) {
+                programCounter += 2;
+            }
             programCounter += 2;
             break;
         case 26:
@@ -502,6 +580,8 @@ int main(int argc, char* argv[]) {
     glutInitWindowSize(640, 320);
     glutInitDisplayMode(GLUT_RGB | GLUT_DOUBLE);
     glutCreateWindow("ChipPlusPlus");
+    glutKeyboardFunc(processKeyDown);
+    glutKeyboardUpFunc(processKeyUp);
     glutDisplayFunc(nextStep);
     glutMainLoop();
 }
