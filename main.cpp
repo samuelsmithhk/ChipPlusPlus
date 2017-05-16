@@ -1,5 +1,10 @@
+#ifdef __APPLE__
+#include <GLUT/glut.h>
+#else
+#include <GL/glut.h>
+#endif
+
 #include <iostream>
-#include <chrono>
 
 #include "ROM.h"
 
@@ -13,8 +18,10 @@ unsigned char vRegisters[15];
 bool vFlag = false;
 unsigned short iRegister = 0;
 bool display[64][32];
-bool draw = false;
 unsigned char delayTimer = 0;
+
+chrono::high_resolution_clock::time_point timestamp1, timestamp2; //for timers
+double timeSinceDelayTick = 0.0;
 
 void loadROMIntoMemory(ROM* rom) {
     for (int i = 512; i < 3744; i++) {
@@ -266,19 +273,32 @@ bool loadSpriteIntoDisplay(int x, int y, int n) {
 }
 
 void drawDisplay() {
-    //temporary, will move to opengl later
-    for (int i = 0; i < 100; i++) {
-        cout << endl;
-    }
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    double xPos = -0.984375;
+    double yPos = 0.96875;
+
+    glBegin(GL_TRIANGLES);
 
     for (int y = 0; y < 32; y++) {
         for (int x = 0; x < 64; x++) {
-            cout << (display[x][y] ? "\u2588\u2588" : "  ");
+            if (display[x][y]) {
+                glVertex3f(xPos + 0.0, yPos + 0.03125,0.0);
+                glVertex3f(xPos + 0.03125, yPos + -0.03125,0.0);
+                glVertex3f(xPos + 0.0, yPos+ -0.03125,0.0);
 
+                glVertex3f(xPos + 0.03125, yPos + 0.03125,0.0);
+                glVertex3f(xPos + 0.03125, yPos + -0.03125,0.0);
+                glVertex3f(xPos + 0.0, yPos + 0.03125,0.0);
+            }
+            xPos += 0.03125;
         }
-        cout << endl;
+        xPos = -1.0;
+        yPos -= 0.0625;
     }
 
+    glEnd();
+    glutSwapBuffers();
 }
 
 int nextInstruction() {
@@ -356,6 +376,17 @@ int nextInstruction() {
             iRegister = (unsigned short) hex2dec(nnn, 3);
             programCounter += 2;
             break;
+        case 22:
+            //CXNN
+            //Sets V(X) to the result of a bitwise AND operation between NN and a random number between 0 and 255
+            x = (char) hex2decDigit(decoded[1]);
+            nn[0] = decoded[2];
+            nn[1] = decoded[3];
+
+            temp = (unsigned short) (chrono::system_clock::now().time_since_epoch().count() % 250);
+            vRegisters[x] = (unsigned char) temp & (unsigned char) hex2dec(nn, 2);
+            programCounter += 2;
+            break;
         case 23:
             //DXYN
             //Draws a sprite
@@ -370,7 +401,6 @@ int nextInstruction() {
             n = (char) hex2decDigit(decoded[3]);
 
             vFlag = loadSpriteIntoDisplay(x, y, n);
-            draw = true;
             programCounter += 2;
             break;
         case 26:
@@ -433,6 +463,28 @@ int nextInstruction() {
     return 0;
 }
 
+void nextStep() {
+    if (nextInstruction() == 1) {
+        return;
+        //exit(1);
+    }
+
+    timestamp2 = timestamp1;
+    timestamp1 = chrono::high_resolution_clock::now();
+
+    if (delayTimer > 0) {
+        chrono::duration<double, milli> time = timestamp1 - timestamp2;
+        timeSinceDelayTick += time.count();
+        if (timeSinceDelayTick >= 16.667) {
+            delayTimer -= 1;
+            timeSinceDelayTick = 0.0;
+        }
+    }
+
+    drawDisplay();
+    glutPostRedisplay();
+}
+
 int main(int argc, char* argv[]) {
 
     if (argc != 2) {
@@ -445,29 +497,11 @@ int main(int argc, char* argv[]) {
     loadROMIntoMemory(gameROM);
     loadFontSetIntoMemory();
 
-    chrono::high_resolution_clock::time_point timestamp1, timestamp2; //for timers
-    double timeSinceDelayTick = 0.0;
-
-    for (;;) {
-        if (nextInstruction() == 1) {
-            return 1;
-        }
-
-        if (draw) {
-            drawDisplay();
-            draw = false;
-        }
-
-        timestamp2 = timestamp1;
-        timestamp1 = chrono::high_resolution_clock::now();
-
-        if (delayTimer > 0) {
-            chrono::duration<double, milli> time = timestamp1 - timestamp2;
-            timeSinceDelayTick += time.count();
-            if (timeSinceDelayTick >= 16.667) {
-                delayTimer -= 1;
-                timeSinceDelayTick = 0.0;
-            }
-        }
-    }
+    glutInit(&argc, argv);
+    glutInitWindowPosition(-1, -1);
+    glutInitWindowSize(640, 320);
+    glutInitDisplayMode(GLUT_RGB | GLUT_DOUBLE);
+    glutCreateWindow("ChipPlusPlus");
+    glutDisplayFunc(nextStep);
+    glutMainLoop();
 }
