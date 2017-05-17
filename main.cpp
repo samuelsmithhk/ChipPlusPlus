@@ -272,7 +272,7 @@ bool loadSpriteIntoDisplay(int x, int y, int n) {
     return unset;
 }
 
-void processKey(unsigned char key, int x, int y, bool down) {
+void processKey(unsigned char key, bool down) {
     if (key < 58) {
         keyboard[key - 48] = down;
     } else {
@@ -308,11 +308,11 @@ void processKey(unsigned char key, int x, int y, bool down) {
 }
 
 void processKeyDown(unsigned char key, int x, int y) {
-    processKey(key, x, y, true);
+    processKey(key, true);
 }
 
 void processKeyUp(unsigned char key, int x, int y) {
-    processKey(key, x, y, false);
+    processKey(key, false);
 }
 
 void drawDisplay() {
@@ -326,13 +326,13 @@ void drawDisplay() {
     for (int y = 0; y < 32; y++) {
         for (int x = 0; x < 64; x++) {
             if (display[x][y]) {
-                glVertex3f(xPos + 0.0, yPos + 0.03125,0.0);
-                glVertex3f(xPos + 0.03125, yPos + -0.03125,0.0);
-                glVertex3f(xPos + 0.0, yPos+ -0.03125,0.0);
+                glVertex3f((GLfloat) (xPos + 0.0), (GLfloat) (yPos + 0.03125), 0.0);
+                glVertex3f((GLfloat) (xPos + 0.03125), (GLfloat) (yPos + -0.03125), 0.0);
+                glVertex3f((GLfloat) (xPos + 0.0), (GLfloat) (yPos + -0.03125), 0.0);
 
-                glVertex3f(xPos + 0.03125, yPos + 0.03125,0.0);
-                glVertex3f(xPos + 0.03125, yPos + -0.03125,0.0);
-                glVertex3f(xPos + 0.0, yPos + 0.03125,0.0);
+                glVertex3f((GLfloat) (xPos + 0.03125), (GLfloat) (yPos + 0.03125), 0.0);
+                glVertex3f((GLfloat) (xPos + 0.03125), (GLfloat) (yPos + -0.03125), 0.0);
+                glVertex3f((GLfloat) (xPos + 0.0), (GLfloat) (yPos + 0.03125), 0.0);
             }
             xPos += 0.03125;
         }
@@ -356,7 +356,7 @@ int nextInstruction() {
         I : 16bit register (For memory address) (Similar to void pointer)
     */
 
-    unsigned char x, y, n;
+    char x, y, n;
     char *nn = new char[2];
     char *nnn = new char[3];
     unsigned short temp;
@@ -368,6 +368,14 @@ int nextInstruction() {
             stackPointer--;
             programCounter = stack[stackPointer];
             programCounter += 2;
+            break;
+        case 3:
+            //1NNN
+            //Jump to address NNN
+            nnn[0] = decoded[1];
+            nnn[1] = decoded[2];
+            nnn[2] = decoded[3];
+            programCounter = (unsigned short) hex2dec(nnn, 3);
             break;
         case 4:
             //2NNN
@@ -382,20 +390,34 @@ int nextInstruction() {
         case 5:
             //3XNN
             //Skips next instruction if V(X) is equal to NN
-            x = (unsigned char) hex2decDigit(decoded[1]);
+            x = (char) hex2decDigit(decoded[1]);
             nn[0] = decoded[2];
             nn[1] = decoded[3];
 
-            if (x == (unsigned char) hex2dec(nn, 2)) {
+            if (x == (char) hex2dec(nn, 2)) {
+                programCounter += 4;
+            } else {
                 programCounter += 2;
             }
 
-            programCounter += 2;
+            break;
+        case 6:
+            //4XNN
+            //If V(X) != NN skip next instruction
+            x = (char) hex2decDigit(decoded[1]);
+            nn[0] = decoded[2];
+            nn[1] = decoded[3];
+
+            if (vRegisters[x] != hex2dec(nn, 2)) {
+                programCounter += 4;
+            } else {
+                programCounter += 2;
+            }
             break;
         case 8:
             //6XNN
             //Sets VX to NN.
-            x = (unsigned char) hex2decDigit(decoded[1]);
+            x = (char) hex2decDigit(decoded[1]);
             nn[0] = decoded[2];
             nn[1] = decoded[3];
             vRegisters[x] = (unsigned char) hex2dec(nn, 2);
@@ -404,25 +426,33 @@ int nextInstruction() {
         case 9:
             //7XNN
             //Adds NN to V(X)
-            x = (unsigned char) hex2decDigit(decoded[1]);
+            x = (char) hex2decDigit(decoded[1]);
             nn[0] = decoded[2];
             nn[1] = decoded[3];
             vRegisters[x] += (unsigned char) hex2dec(nn, 2);
             programCounter += 2;
             break;
+        case 10:
+            //8XY0
+            //Sets V(X) to value of V(Y)
+            x = (char) hex2decDigit(decoded[1]);
+            y = (char) hex2decDigit(decoded[2]);
+            vRegisters[x] = vRegisters[y];
+            programCounter += 2;
+            break;
         case 12:
             //8XY2
             //Set X to v[X] & v[Y]
-            x = (unsigned char) hex2decDigit(decoded[1]);
-            y = (unsigned char) hex2decDigit(decoded[2]);
+            x = (char) hex2decDigit(decoded[1]);
+            y = (char) hex2decDigit(decoded[2]);
             vRegisters[x] = vRegisters[x] & vRegisters[y];
             programCounter += 2;
             break;
         case 14:
             //8XY4
             //Add V(Y) to V(X), if result greater than 255, subtract 255 and set v[15] to 1 (0 if not)
-            x = (unsigned char) hex2decDigit(decoded[1]);
-            y = (unsigned char) hex2decDigit(decoded[2]);
+            x = (char) hex2decDigit(decoded[1]);
+            y = (char) hex2decDigit(decoded[2]);
             temp = vRegisters[x] + vRegisters[y];
 
             if (temp > 255) {
@@ -447,7 +477,7 @@ int nextInstruction() {
         case 22:
             //CXNN
             //Sets V(X) to the result of a bitwise AND operation between NN and a random number between 0 and 255
-            x = (unsigned char) hex2decDigit(decoded[1]);
+            x = (char) hex2decDigit(decoded[1]);
             nn[0] = decoded[2];
             nn[1] = decoded[3];
 
@@ -464,9 +494,9 @@ int nextInstruction() {
             //reading of pixel values starts at iRegister, bit encoded
             //if a pixel that was set before this instruction is unset, set vf to 1
             //if no pixels get unset, set vf to 0
-            x = (unsigned char) hex2decDigit(decoded[1]);
-            y = (unsigned char) hex2decDigit(decoded[2]);
-            n = (unsigned char) hex2decDigit(decoded[3]);
+            x = (char) hex2decDigit(decoded[1]);
+            y = (char) hex2decDigit(decoded[2]);
+            n = (char) hex2decDigit(decoded[3]);
 
             vRegisters[15] = (unsigned char) (loadSpriteIntoDisplay(x, y, n) ? 1 : 0);
             programCounter += 2;
@@ -474,12 +504,13 @@ int nextInstruction() {
         case 25:
             //EXA1
             //Skip next instruction if key stored in V(X) is not pressed
-            x = (unsigned char) hex2decDigit(decoded[1]);
+            x = (char) hex2decDigit(decoded[1]);
             temp = vRegisters[x];
             if (!keyboard[temp]) {
+                programCounter += 4;
+            } else {
                 programCounter += 2;
             }
-            programCounter += 2;
             break;
         case 26:
             //FX07
